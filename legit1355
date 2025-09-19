@@ -1,0 +1,355 @@
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local PathfindingService = game:GetService("PathfindingService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+local camera = workspace.CurrentCamera
+
+-- Variables
+local floatEnabled = false
+local flightDuration = 2
+local floatConnection
+local espEnabled = true
+local espObjects = {}
+
+local savedBase = nil
+local autoStealEnabled = false
+local flySpeed = 27
+local reachDistance = 2
+local baseMarker = nil
+local normalHoverHeight = 7
+local autoStealHoverHeight = 8.5
+local autoStealThread = nil
+
+-- Noclip Part variables
+local noclipEnabled = false
+local platform
+local noclipConn
+local baseY = 0
+local startY = 0
+
+-- UI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MaorHubUI"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Main frame (taller vertical list)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 320) -- taller frame to fit Noclip Part
+mainFrame.Position = UDim2.new(0, 20, 0, 100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+-- Gradient for buttons
+local buttonGradient = Instance.new("UIGradient")
+buttonGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(0,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255,0,255))})
+buttonGradient.Rotation = 45
+
+-- Title frame (small, pushed to top)
+local titleFrame = Instance.new("Frame")
+titleFrame.Size = UDim2.new(1,0,0,40)
+titleFrame.Position = UDim2.new(0,0,0,0)
+titleFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+titleFrame.BorderSizePixel = 0
+titleFrame.Parent = mainFrame
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1,0,1,0)
+titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 20
+titleText.TextColor3 = Color3.fromRGB(255,255,255)
+titleText.TextXAlignment = Enum.TextXAlignment.Center
+titleText.TextYAlignment = Enum.TextYAlignment.Center
+titleText.Text = "Maor Hub Premium"
+titleText.Parent = titleFrame
+
+-- Button helper
+local function createButton(parent, name, index)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 200, 0, 40)
+	btn.Position = UDim2.new(0, 10, 0, 50 + (index-1)*50)
+	btn.Text = name
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 18
+	btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+	btn.TextColor3 = Color3.fromRGB(255,255,255)
+	btn.Parent = parent
+	local uicorner = Instance.new("UICorner")
+	uicorner.CornerRadius = UDim.new(0,10)
+	uicorner.Parent = btn
+	buttonGradient:Clone().Parent = btn
+	return btn
+end
+
+-- Buttons (vertical list)
+local floatBtn = createButton(mainFrame,"Float Forward Wave",1)
+local espBtn = createButton(mainFrame,"Player ESP: ON",2)
+local setBaseBtn = createButton(mainFrame,"Set Base",3)
+local autoStealBtn = createButton(mainFrame,"Auto Steal: OFF",4)
+local noclipBtn = createButton(mainFrame,"Noclip Part: OFF",5)
+
+-- Float Function
+local function startFloat()
+	if floatEnabled then return end
+	floatEnabled = true
+	floatBtn.Text = "Flying..."
+	local startTime = tick()
+	floatConnection = RunService.Heartbeat:Connect(function()
+		if tick() - startTime > flightDuration then
+			floatEnabled = false
+			floatBtn.Text = "Float Forward Wave"
+			if floatConnection then
+				floatConnection:Disconnect()
+				floatConnection = nil
+			end
+		else
+			local forward = hrp.CFrame.LookVector * 26
+			local waveY = math.sin(tick() * 4) * 3
+			local vertical = Vector3.new(0, 8 + waveY, 0)
+			hrp.Velocity = forward + vertical
+		end
+	end)
+end
+floatBtn.MouseButton1Click:Connect(startFloat)
+
+-- ESP Functions
+local function createESP(plr)
+    if plr == player then return end  -- skip local player
+    if espObjects[plr] then return end -- already exists
+
+    local box = Drawing.new("Square")
+    box.Color = Color3.fromRGB(0,255,0)
+    box.Thickness = 2
+    box.Filled = false
+    box.Transparency = 1
+
+    local nameTag = Drawing.new("Text")
+    nameTag.Color = Color3.fromRGB(0,255,0)
+    nameTag.Size = 16
+    nameTag.Center = true
+    nameTag.Outline = true
+    nameTag.Text = plr.Name
+
+    espObjects[plr] = {box=box, name=nameTag}
+
+    -- Remove ESP when player leaves
+    plr.AncestryChanged:Connect(function()
+        if not plr:IsDescendantOf(game) then
+            if espObjects[plr] then
+                espObjects[plr].box:Remove()
+                espObjects[plr].name:Remove()
+                espObjects[plr]=nil
+            end
+        end
+    end)
+end
+
+local function removeESP(plr)
+    if espObjects[plr] then
+        espObjects[plr].box:Remove()
+        espObjects[plr].name:Remove()
+        espObjects[plr]=nil
+    end
+end
+
+local function updateESP()
+	for plr,obj in pairs(espObjects) do
+		if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local root = plr.Character:FindFirstChild("HumanoidRootPart")
+			local head = plr.Character:FindFirstChild("Head") or root
+
+			local topPos = head.Position + Vector3.new(0,0.5,0)
+			local bottomPos = root.Position - Vector3.new(0,1,0)
+
+			local top2D,onScreenTop = camera:WorldToViewportPoint(topPos)
+			local bottom2D,onScreenBottom = camera:WorldToViewportPoint(bottomPos)
+
+			if onScreenTop and onScreenBottom and espEnabled then
+				local sizeY = math.abs(top2D.Y - bottom2D.Y)
+				local sizeX = sizeY * 0.5
+				obj.box.Position = Vector2.new(top2D.X - sizeX/2, top2D.Y)
+				obj.box.Size = Vector2.new(sizeX,sizeY)
+				obj.box.Visible = true
+				obj.name.Position = Vector2.new(top2D.X, top2D.Y-15)
+				obj.name.Visible = true
+			else
+				obj.box.Visible=false
+				obj.name.Visible=false
+			end
+		else
+			obj.box.Visible=false
+			obj.name.Visible=false
+		end
+	end
+end
+
+-- Create ESP for existing players
+for _,plr in pairs(Players:GetPlayers()) do
+	createESP(plr)
+end
+
+-- Create ESP for new players
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function()
+		createESP(plr)
+	end)
+end)
+
+-- Update loop
+RunService.RenderStepped:Connect(updateESP)
+
+espBtn.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	espBtn.Text = "Player ESP: "..(espEnabled and "ON" or "OFF")
+end)
+
+-- Auto Steal Functions
+setBaseBtn.MouseButton1Click:Connect(function()
+	savedBase = hrp.Position
+	if baseMarker then baseMarker:Destroy() end
+	baseMarker = Instance.new("Part")
+	baseMarker.Size = Vector3.new(1,1,1)
+	baseMarker.Anchored = true
+	baseMarker.CanCollide = false
+	baseMarker.BrickColor = BrickColor.new("Bright red")
+	baseMarker.Material = Enum.Material.Neon
+	baseMarker.Position = savedBase
+	baseMarker.Parent = workspace
+	setBaseBtn.Text = "Base Set!"
+	wait(1)
+	setBaseBtn.Text = "Set Base"
+end)
+
+local function flyToBaseWithPath()
+	humanoid.PlatformStand = true
+	while autoStealEnabled and savedBase do
+		local direction = (savedBase - hrp.Position)
+		local distance = direction.Magnitude
+		if distance <= reachDistance then
+			autoStealEnabled=false
+			autoStealBtn.Text="Auto Steal: OFF"
+			break
+		end
+
+		local path = PathfindingService:CreatePath({
+			AgentRadius = 2,
+			AgentHeight = 5,
+			AgentCanJump = true,
+			AgentJumpHeight = 50,
+			AgentMaxSlope = 45,
+		})
+		path:ComputeAsync(hrp.Position,savedBase)
+		local waypoints = path:GetWaypoints()
+
+		for _,wp in ipairs(waypoints) do
+			if not autoStealEnabled then break end
+			local targetPos = wp.Position + Vector3.new(0,autoStealHoverHeight,0)
+			while (hrp.Position-targetPos).Magnitude>reachDistance do
+				if not autoStealEnabled then break end
+				local moveDir = (targetPos-hrp.Position).Unit
+				local bobbing = math.sin(tick()*4)*3
+				hrp.Velocity = moveDir*flySpeed + Vector3.new(0,bobbing,0)
+				RunService.Heartbeat:Wait()
+			end
+		end
+	end
+	hrp.Velocity=Vector3.new(0,0,0)
+	humanoid.PlatformStand=false
+end
+
+autoStealBtn.MouseButton1Click:Connect(function()
+	if not savedBase then
+		autoStealBtn.Text="Set Base First!"
+		wait(1)
+		autoStealBtn.Text="Auto Steal: OFF"
+		return
+	end
+
+	autoStealEnabled = not autoStealEnabled
+	autoStealBtn.Text = "Auto Steal: "..(autoStealEnabled and "ON" or "OFF")
+
+	if autoStealEnabled then
+		if not autoStealThread then
+			autoStealThread = coroutine.create(flyToBaseWithPath)
+			coroutine.resume(autoStealThread)
+		end
+	else
+		autoStealThread = nil
+		hrp.Velocity=Vector3.new(0,0,0)
+		humanoid.PlatformStand=false
+	end
+end)
+
+-- Noclip Part Functions
+local PLATFORM_OFFSET_Y = 3
+local UP_SPEED = 0.05
+local HEIGHT_LIMIT = 10
+
+local function startNoclipPart()
+	if noclipEnabled or not hrp then return end
+	noclipEnabled = true
+	noclipBtn.Text = "Noclip Part: ON"
+
+	if platform then
+		platform:Destroy()
+		platform = nil
+	end
+
+	platform = Instance.new("Part")
+	platform.Size = Vector3.new(6,1,6)
+	platform.Anchored = true
+	platform.CanCollide = true
+	platform.Transparency = 0.5
+	platform.Color = Color3.fromRGB(0,200,255)
+	platform.Material = Enum.Material.Neon
+	platform.Position = hrp.Position - Vector3.new(0,PLATFORM_OFFSET_Y,0)
+	platform.Parent = workspace
+
+	startY = platform.Position.Y
+	baseY = startY
+
+	noclipConn = RunService.RenderStepped:Connect(function(dt)
+		if not noclipEnabled or not platform or not hrp then return end
+		if baseY < startY + HEIGHT_LIMIT then
+			baseY = baseY + UP_SPEED
+		end
+		platform.Position = Vector3.new(hrp.Position.X, baseY, hrp.Position.Z)
+	end)
+end
+
+local function stopNoclipPart()
+	noclipEnabled = false
+	noclipBtn.Text = "Noclip Part: OFF"
+	if noclipConn then
+		noclipConn:Disconnect()
+		noclipConn = nil
+	end
+	if platform then
+		platform:Destroy()
+		platform = nil
+	end
+end
+
+noclipBtn.MouseButton1Click:Connect(function()
+	if noclipEnabled then
+		stopNoclipPart()
+	else
+		startNoclipPart()
+	end
+end)
+
+-- Respawn support
+player.CharacterAdded:Connect(function(char)
+	character = char
+	hrp = character:WaitForChild("HumanoidRootPart")
+	humanoid = character:WaitForChild("Humanoid")
+end)
+
+
