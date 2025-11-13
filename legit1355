@@ -1,1 +1,47 @@
-code
+--// LocalScript inside StarterGui
+-- Name: MaorHub
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Create ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "nigga hub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Create main frame
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 120)
+Frame.Position = UDim2.new(0.5, -100, 0.5, -60)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BackgroundTransparency = 0.1
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+-- Create title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "nigga hub"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.BackgroundTransparency = 1
+Title.Parent = Frame
+
+-- Create button
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(0.8, 0, 0, 40)
+Button.Position = UDim2.new(0.1, 0, 0.6, 0)
+Button.Text = "give me robux"
+Button.Font = Enum.Font.GothamBold
+Button.TextSize = 18
+Button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+Button.Parent = Frame
+
+-- Safe example behavior
+Button.MouseButton1Click:Connect(function()
+	print("Hi!") -- Just prints to the console
+	Button.Text = "nigger hi your mom died on a accident"
+end)
